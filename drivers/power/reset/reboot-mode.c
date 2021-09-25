@@ -14,6 +14,15 @@
 #include <linux/of.h>
 #include <linux/reboot.h>
 #include <linux/reboot-mode.h>
+#ifdef VENDOR_EDIT
+//wanghao@BSP.Kernel.Driver,2020/5/20, add for reboot mode
+#include <dt-bindings/soc/mediatek,boot-mode.h>
+#endif
+
+#ifdef VENDOR_EDIT
+/* Bin.Li@EXP.BSP.bootloader.bootflow, 2017/05/24,, Add for reboot kernel panic mode */
+extern int is_kernel_panic;
+#endif
 
 #define PREFIX "mode-"
 
@@ -38,6 +47,10 @@ static unsigned int get_reboot_mode_magic(struct reboot_mode_driver *reboot,
 			magic = info->magic;
 			break;
 		}
+	}
+
+	if(magic == 0 && strcmp(cmd, normal) && is_kernel_panic) {
+		magic = BOOT_KERNEL;
 	}
 
 	return magic;
