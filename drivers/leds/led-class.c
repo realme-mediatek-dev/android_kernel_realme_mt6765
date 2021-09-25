@@ -24,6 +24,10 @@
 #include "leds.h"
 
 static struct class *leds_class;
+//#ifdef OPLUS_BUG_STABILITY
+/** Jianbin.Zhang@PSW.MM.Display.LCD.Stability, 2020/05/06,* add for oppo brightness and max_brightness node*/
+extern unsigned long oppo_display_brightness;
+//#endif/*OPLUS_BUG_DEBUG*/
 
 static ssize_t brightness_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -61,6 +65,10 @@ static ssize_t brightness_store(struct device *dev,
 	ret = size;
 unlock:
 	mutex_unlock(&led_cdev->led_access);
+    //#ifdef OPLUS_BUG_STABILITY
+    /** Jianbin.Zhang@PSW.MM.Display.LCD.Stability, 2020/05/06,* add for oppo brightness and max_brightness node*/
+    oppo_display_brightness = state;
+    //#endif
 	return ret;
 }
 static DEVICE_ATTR_RW(brightness);
@@ -164,7 +172,34 @@ static void led_remove_brightness_hw_changed(struct led_classdev *led_cdev)
 {
 }
 #endif
-
+//#ifdef OPLUS_BUG_STABILITY
+/*jianbin.zhang@PSW.MultiMedia.Display, 2020/05/21,modify for multibits backlight.*/
+extern bool oplus_display_tenbits_support;
+extern bool oplus_display_elevenbits_support;
+extern bool oplus_display_twelvebits_support;
+int get_full_backlight_level()
+{
+	if (oplus_display_twelvebits_support)
+		return 4095;
+	else if(oplus_display_elevenbits_support)
+		return 2047;
+	else if(oplus_display_tenbits_support)
+		return 1023;
+	return 255;
+}
+EXPORT_SYMBOL_GPL(get_full_backlight_level);
+int get_half_backlight_level()
+{
+	if (oplus_display_twelvebits_support)
+		return 2047;
+	else if(oplus_display_elevenbits_support)
+		return 1023;
+	else if(oplus_display_tenbits_support)
+		return 511;
+	return 127;
+}
+EXPORT_SYMBOL_GPL(get_half_backlight_level);
+//#endif
 /**
  * led_classdev_suspend - suspend an led_classdev.
  * @led_cdev: the led_classdev to suspend.
