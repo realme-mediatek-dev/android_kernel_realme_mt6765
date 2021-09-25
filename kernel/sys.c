@@ -293,6 +293,14 @@ SYSCALL_DEFINE2(getpriority, int, which, int, who)
 			if (niceval > retval)
 				retval = niceval;
 		}
+#ifdef CONFIG_MTK_ENG_BUILD
+		if (retval == -ESRCH && current->pid == who) {
+			pr_warn("getpriority return unexpected value who:%d "
+				"current:%d niceval:%d retvale:%d", who,
+				current->pid, niceval, retval);
+			BUG();
+		}
+#endif
 		break;
 	case PRIO_PGRP:
 		if (who)
@@ -1864,6 +1872,16 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 				       &exe_file->f_path))
 				goto exit_err;
 		}
+
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+		for (vma = mm->reserve_mmap; vma; vma = vma->vm_next) {
+			if (!vma->vm_file)
+				continue;
+			if (path_equal(&vma->vm_file->f_path,
+						&exe_file->f_path))
+				goto exit_err;
+		}
+#endif
 
 		up_read(&mm->mmap_sem);
 		fput(exe_file);

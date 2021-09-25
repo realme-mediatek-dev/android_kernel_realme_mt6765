@@ -3,6 +3,7 @@
 # Makefile for the linux kernel.
 #
 
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 obj-y     = fork.o exec_domain.o panic.o \
 	    cpu.o exit.o softirq.o resource.o \
 	    sysctl.o sysctl_binary.o capability.o ptrace.o user.o \
@@ -14,6 +15,11 @@ obj-y     = fork.o exec_domain.o panic.o \
 
 obj-$(CONFIG_MODULES) += kmod.o
 obj-$(CONFIG_MULTIUSER) += groups.o
+
+#ifdef CONFIG_OPLUS_FEATURE_PANIC_FLUSH
+#yanwu@TECH.Storage.FS, 2019/08/27, add code to flush device cache in panic
+obj-y += panic_flush.o
+#endif
 
 ifdef CONFIG_FUNCTION_TRACER
 # Do not trace internal ftrace files
@@ -48,6 +54,12 @@ obj-y += irq/
 obj-y += rcu/
 obj-y += livepatch/
 obj-y += dma/
+
+
+#ifdef CONFIG_OPLUS_SECURE_GUARD
+obj-$(CONFIG_OPLUS_SECURE_GUARD) += keventupload/
+#endif /* CONFIG_OPLUS_SECURE_GUARD */
+
 
 obj-$(CONFIG_CHECKPOINT_RESTORE) += kcmp.o
 obj-$(CONFIG_FREEZER) += freezer.o
@@ -122,6 +134,11 @@ obj-$(CONFIG_TORTURE_TEST) += torture.o
 obj-$(CONFIG_HAS_IOMEM) += iomem.o
 obj-$(CONFIG_ZONE_DEVICE) += memremap.o
 obj-$(CONFIG_RSEQ) += rseq.o
+
+#ifdef OPLUS_FEATURE_UIFIRST
+#XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+obj-y += uifirst/
+#endif /* OPLUS_FEATURE_UIFIRST */
 
 $(obj)/configs.o: $(obj)/config_data.h
 

@@ -90,6 +90,10 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 	sem->owner = NULL;
 	osq_lock_init(&sem->osq);
 #endif
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+	sem->ux_dep_task = NULL;
+#endif /* OPLUS_FEATURE_UIFIRST */
 }
 
 EXPORT_SYMBOL(__init_rwsem);
@@ -258,7 +262,16 @@ __rwsem_down_read_failed_common(struct rw_semaphore *sem, int state)
 	raw_spin_lock_irq(&sem->wait_lock);
 	if (list_empty(&sem->wait_list))
 		adjustment += RWSEM_WAITING_BIAS;
+#ifdef VENDOR_EDIT
+// Liujie.Xie@TECH.Kernel.Sched, 2019/05/22, add for ui first
+	if (sysctl_uifirst_enabled) {
+		rwsem_list_add(waiter.task, &waiter.list, &sem->wait_list);
+	} else {
+		list_add_tail(&waiter.list, &sem->wait_list);
+	}
+#else
 	list_add_tail(&waiter.list, &sem->wait_list);
+#endif
 
 	/* we're now waiting on the lock, but no longer actively locking */
 	count = atomic_long_add_return(adjustment, &sem->count);
@@ -273,6 +286,13 @@ __rwsem_down_read_failed_common(struct rw_semaphore *sem, int state)
 	    (count > RWSEM_WAITING_BIAS &&
 	     adjustment != -RWSEM_ACTIVE_READ_BIAS))
 		__rwsem_mark_wake(sem, RWSEM_WAKE_ANY, &wake_q);
+
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+	if (sysctl_uifirst_enabled) {
+		rwsem_set_inherit_ux(current, waiter.task, READ_ONCE(sem->owner), sem);
+	}
+#endif /* OPLUS_FEATURE_UIFIRST */
 
 	raw_spin_unlock_irq(&sem->wait_lock);
 	wake_up_q(&wake_q);
@@ -289,7 +309,19 @@ __rwsem_down_read_failed_common(struct rw_semaphore *sem, int state)
 			raw_spin_unlock_irq(&sem->wait_lock);
 			break;
 		}
+#ifdef OPLUS_FEATURE_HEALTHINFO
+// Liujie.Xie@TECH.Kernel.Sched, 2019/08/29, add for jank monitor
+#ifdef CONFIG_OPPO_JANK_INFO
+		current->in_downread = 1;
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
 		schedule();
+#ifdef OPLUS_FEATURE_HEALTHINFO
+// Liujie.Xie@TECH.Kernel.Sched, 2019/08/29, add for jank monitor
+#ifdef CONFIG_OPPO_JANK_INFO
+		current->in_downread = 0;
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
 	}
 
 	__set_current_state(TASK_RUNNING);
@@ -543,7 +575,16 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 	if (list_empty(&sem->wait_list))
 		waiting = false;
 
+#ifdef VENDOR_EDIT
+// Liujie.Xie@TECH.Kernel.Sched, 2019/05/22, add for ui first
+	if (sysctl_uifirst_enabled) {
+		rwsem_list_add(waiter.task, &waiter.list, &sem->wait_list);
+	} else {
+		list_add_tail(&waiter.list, &sem->wait_list);
+	}
+#else
 	list_add_tail(&waiter.list, &sem->wait_list);
+#endif
 
 	/* we're now waiting on the lock, but no longer actively locking */
 	if (waiting) {
@@ -574,6 +615,13 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 	} else
 		count = atomic_long_add_return(RWSEM_WAITING_BIAS, &sem->count);
 
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+	if (sysctl_uifirst_enabled) {
+		rwsem_set_inherit_ux(waiter.task, current, READ_ONCE(sem->owner), sem);
+	}
+#endif /* OPLUS_FEATURE_UIFIRST */
+
 	/* wait until we successfully acquire the lock */
 	set_current_state(state);
 	while (true) {
@@ -585,8 +633,19 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 		do {
 			if (signal_pending_state(state, current))
 				goto out_nolock;
-
+#ifdef OPLUS_FEATURE_HEALTHINFO
+// Liujie.Xie@TECH.Kernel.Sched, 2019/08/29, add for jank monitor
+#ifdef CONFIG_OPPO_JANK_INFO
+			current->in_downwrite = 1;
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
 			schedule();
+#ifdef OPLUS_FEATURE_HEALTHINFO
+// Liujie.Xie@TECH.Kernel.Sched, 2019/08/29, add for jank monitor
+#ifdef CONFIG_OPPO_JANK_INFO
+			current->in_downwrite = 0;
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
 			set_current_state(state);
 		} while ((count = atomic_long_read(&sem->count)) & RWSEM_ACTIVE_MASK);
 
@@ -698,6 +757,13 @@ locked:
 
 	if (!list_empty(&sem->wait_list))
 		__rwsem_mark_wake(sem, RWSEM_WAKE_ANY, &wake_q);
+
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+	if (sysctl_uifirst_enabled) {
+		rwsem_unset_inherit_ux(sem, current);
+	}
+#endif /* OPLUS_FEATURE_UIFIRST */
 
 	raw_spin_unlock_irqrestore(&sem->wait_lock, flags);
 	wake_up_q(&wake_q);

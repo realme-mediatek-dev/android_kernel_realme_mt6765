@@ -8858,6 +8858,26 @@ static void perf_addr_filters_splice(struct perf_event *event,
 	free_filters_list(&list);
 }
 
+
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+static bool perf_addr_filter_apply_reserved(struct perf_addr_filter *filter,
+				   struct mm_struct *mm,
+				   struct perf_addr_filter_range *fr)
+{
+	struct vm_area_struct *vma;
+
+	for (vma = mm->reserve_mmap; vma; vma = vma->vm_next) {
+		if (!vma->vm_file)
+			continue;
+
+		if (perf_addr_filter_vma_adjust(filter, vma, fr))
+			return true;
+	}
+	return false;
+}
+#endif
+
+
 /*
  * Scan through mm's vmas and see if one of them matches the
  * @filter; if so, adjust filter's address range.
@@ -8870,8 +8890,19 @@ static void perf_addr_filter_apply(struct perf_addr_filter *filter,
 	struct vm_area_struct *vma;
 
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+		if (!vma->vm_file) {
+
+			if (vma != mm->reserve_vma)
+				continue;
+			if (perf_addr_filter_apply_reserved(filter, mm, fr))
+				return;
+			continue;
+		}
+#else
 		if (!vma->vm_file)
 			continue;
+#endif
 
 		if (perf_addr_filter_vma_adjust(filter, vma, fr))
 			return;

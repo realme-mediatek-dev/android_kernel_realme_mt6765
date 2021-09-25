@@ -45,6 +45,10 @@ static int convert_prio(int prio)
 	return cpupri;
 }
 
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/06/15, Add for UIFirst
+extern void drop_ux_task_cpus(struct task_struct *p, struct cpumask *lowest_mask);
+#endif /* OPLUS_FEATURE_UIFIRST */
 static inline int __cpupri_find(struct cpupri *cp, struct task_struct *p,
 				struct cpumask *lowest_mask, int idx)
 {
@@ -83,6 +87,11 @@ static inline int __cpupri_find(struct cpupri *cp, struct task_struct *p,
 	if (lowest_mask) {
 		cpumask_and(lowest_mask, &p->cpus_allowed, vec->mask);
 
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/06/15, Add for UIFirst
+		if (sysctl_uifirst_enabled)
+			drop_ux_task_cpus(p, lowest_mask);
+#endif /* OPLUS_FEATURE_UIFIRST */
 		/*
 		 * We have to ensure that we have at least one bit
 		 * still set in the array, since the map could have
