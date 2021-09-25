@@ -41,12 +41,21 @@
 #include <linux/compiler.h>
 #include <linux/gfp.h>
 #include <linux/module.h>
+//#ifdef OPLUS_FEATURE_DATA_EVAL
+//PengHao@NETWORK.DATA.8124, 2020/05/08, Add for network quality evaluation.
+#include <net/oplus/oplus_kernel2user.h>
+//#endif /* OPLUS_FEATURE_DATA_EVAL */
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
 
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp);
+
+#ifdef OPLUS_FEATURE_APP_MONITOR
+/* Add code for push detect function */
+extern void oplus_app_monitor_update_app_info(struct sock *sk, const struct sk_buff *skb, int send, int retrans);
+#endif /* OPLUS_FEATURE_APP_MONITOR */
 
 /* Account for new data that has been sent to the network. */
 static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
@@ -1132,6 +1141,10 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 			      tcp_skb_pcount(skb));
 
 	tp->segs_out += tcp_skb_pcount(skb);
+	//#ifdef OPLUS_FEATURE_DATA_EVAL
+	//PengHao@NETWORK.DATA.8124, 2020/05/08, Add for network quality evaluation.
+	oplus_handle_retransmit(sk, 0);
+	//#endif /* OPLUS_FEATURE_DATA_EVAL */
 	/* OK, its time to fill skb_shinfo(skb)->gso_{segs|size} */
 	skb_shinfo(skb)->gso_segs = tcp_skb_pcount(skb);
 	skb_shinfo(skb)->gso_size = tcp_skb_mss(skb);
@@ -1142,6 +1155,11 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 	/* Cleanup our debris for IP stacks */
 	memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
 			       sizeof(struct inet6_skb_parm)));
+
+	#ifdef OPLUS_FEATURE_APP_MONITOR
+	/* Add code for push detect function */
+	oplus_app_monitor_update_app_info(sk, skb, 1, 0);
+	#endif /* OPLUS_FEATURE_APP_MONITOR */
 
 	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
 
@@ -2212,10 +2230,8 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 {
 	unsigned int limit;
 
-	limit = max(2 * skb->truesize, sk->sk_pacing_rate >> sk->sk_pacing_shift);
-	limit = min_t(u32, limit,
+	limit = max_t(u32, sk->sk_pacing_rate >> sk->sk_pacing_shift,
 		      sock_net(sk)->ipv4.sysctl_tcp_limit_output_bytes);
-	limit <<= factor;
 
 	if (refcount_read(&sk->sk_wmem_alloc) > limit) {
 		/* Always send skb if rtx queue is empty.
@@ -2832,6 +2848,10 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	unsigned int cur_mss;
 	int diff, len, err;
 
+	//#ifdef OPLUS_FEATURE_DATA_EVAL
+	//PengHao@NETWORK.DATA.8124, 2020/05/08, Add for network quality evaluation.
+	oplus_handle_retransmit(sk, 1);
+	//#endif /* OPLUS_FEATURE_DATA_EVAL */
 
 	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size)
@@ -2922,13 +2942,22 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	} else {
 		err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
 	}
-
+	//#ifdef OPLUS_FEATURE_DATA_EVAL
+	//PengHao@NETWORK.DATA.8124, 2020/05/08, Add for network quality evaluation.
+	oplus_handle_retransmit(sk, -1); // in this function, tcp_transmit_skb is called again.
+	//#endif /* OPLUS_FEATURE_DATA_EVAL */
 	if (BPF_SOCK_OPS_TEST_FLAG(tp, BPF_SOCK_OPS_RETRANS_CB_FLAG))
 		tcp_call_bpf_3arg(sk, BPF_SOCK_OPS_RETRANS_CB,
 				  TCP_SKB_CB(skb)->seq, segs, err);
 
 	if (likely(!err)) {
 		TCP_SKB_CB(skb)->sacked |= TCPCB_EVER_RETRANS;
+
+		#ifdef OPLUS_FEATURE_APP_MONITOR
+		/* Add code for push detect function */
+		oplus_app_monitor_update_app_info(sk, skb, 1, 1);
+		#endif /* OPLUS_FEATURE_APP_MONITOR */
+
 		trace_tcp_retransmit_skb(sk, skb);
 	} else if (err != -EBUSY) {
 		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPRETRANSFAIL, segs);
@@ -3269,6 +3298,11 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 	tcp_options_write((__be32 *)(th + 1), NULL, &opts);
 	th->doff = (tcp_header_size >> 2);
 	__TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
+
+	//#ifdef OPLUS_FEATURE_DATA_EVAL
+	//PengHao@NETWORK.DATA.8124, 2020/05/08, Add for network quality evaluation.
+	oplus_handle_retransmit(sk, 0);
+	//#endif /* OPLUS_FEATURE_DATA_EVAL */
 
 #ifdef CONFIG_TCP_MD5SIG
 	/* Okay, we have all we need - do the md5 hash if needed */
@@ -3779,6 +3813,10 @@ int tcp_rtx_synack(const struct sock *sk, struct request_sock *req)
 	res = af_ops->send_synack(sk, NULL, &fl, req, NULL, TCP_SYNACK_NORMAL);
 	if (!res) {
 		__TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
+		//#ifdef OPLUS_FEATURE_DATA_EVAL
+		//PengHao@NETWORK.DATA.8124, 2020/05/08, Add for network quality evaluation.
+		oplus_handle_retransmit(sk, 1);
+		//#endif /* OPLUS_FEATURE_DATA_EVAL */
 		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPSYNRETRANS);
 		if (unlikely(tcp_passive_fastopen(sk)))
 			tcp_sk(sk)->total_retrans++;
