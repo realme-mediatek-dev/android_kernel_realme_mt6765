@@ -25,3 +25,31 @@ obj-$(CONFIG_ARCH_U8500)	+= ux500/
 obj-$(CONFIG_PLAT_VERSATILE)	+= versatile/
 obj-y				+= xilinx/
 obj-$(CONFIG_ARCH_ZX)		+= zte/
+#ifdef VENDOR_EDIT
+# Bin.Li@EXP.BSP.bootloader.bootflow, 2017/05/15, Add for oppo device info and oppo project
+obj-$(CONFIG_OPPO_ARCH_FILE)	+= oppo/
+#endif /*VENDOR_EDIT*/
+
+#ifdef OPLUS_FEATURE_IOMONITOR
+obj-$(CONFIG_IOMONITOR)    +=  oplus/iomonitor/
+#endif /*OPLUS_FEATURE_IOMONITOR*/
+
+#ifdef VENDOR_EDIT
+#wen.luo@BSP.Kernel.Stability 2020/03/25 add for oplus kernel system
+obj-$(CONFIG_OPLUS_SYSTEM_KERNEL)	+= oplus/system/
+#endif /* VENDOR_EDIT */
+
+#ifdef OPLUS_FEATURE_HEALTHINFO
+#//wenbin.liu@PSW.Kernel.MM, 2018/05/23, Add for Healthinfo monitor
+obj-y     +=  oplus/oppo_healthinfo/
+#endif /* OPLUS_FEATURE_HEALTHINFO */
+
+#ifdef OPLUS_FEATURE_LOWMEM_DBG
+#Hailong.Liu@BSP.Kernel.MM, 2020/06/17, Add for dump mem when shrink
+obj-$(CONFIG_OPLUS_FEATURE_LOWMEM_DBG)	+=  oplus/lowmem_dbg/
+#endif /* OPLUS_FEATURE_LOWMEM_DBG */
+
+#ifdef OPLUS_FEATURE_TP_BASIC
+#yaorenbing@BSP.TP.Init, 2020/08/05, Add for device_info.
+obj-y                           += oplus/
+#endif /* OPLUS_FEATURE_TP_BASIC */
