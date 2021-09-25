@@ -22,6 +22,12 @@
 #include "xhci.h"
 #include "xhci-mtk.h"
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/* Yichun.Chen  PSW.BSP.CHG  2019-02-02  for host tune test mode */
+#include <linux/debugfs.h>
+#include <linux/uaccess.h>
+#endif
+
 /* ip_pw_ctrl0 register */
 #define CTRL0_IP_SW_RST	BIT(0)
 
@@ -67,6 +73,131 @@
 #define PERI_SSUSB_SPM_CTRL	0x0
 #define SSC_IP_SLEEP_EN	BIT(4)
 #define SSC_SPM_INT_EN		BIT(1)
+
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/* Yichun.Chen  PSW.BSP.CHG  2019-02-02  for host tune test mode */
+/* test mode */
+#define HOST_CMD_TEST_J             0x1
+#define HOST_CMD_TEST_K             0x2
+#define HOST_CMD_TEST_SE0_NAK       0x3
+#define HOST_CMD_TEST_PACKET        0x4
+#define PMSC_PORT_TEST_CTRL_OFFSET  28
+
+static ssize_t xhci_mtk_test_mode_write(struct file *file,
+		const char __user *ubuf, size_t count, loff_t *ppos)
+
+{
+	struct seq_file *s = file->private_data;
+	struct xhci_hcd_mtk *mtk = s->private;
+	struct xhci_hcd *xhci = hcd_to_xhci(mtk->hcd);
+	int ports = HCS_MAX_PORTS(xhci->hcs_params1);
+	char buf[20];
+	u8 test = 0;
+	u32 temp;
+	u32 __iomem *addr;
+	int i;
+
+	memset(buf, 0x00, sizeof(buf));
+
+	if (copy_from_user(buf, ubuf,
+			min_t(size_t, sizeof(buf) - 1, count)))
+		return -EFAULT;
+
+	if (!strncmp(buf, "test packet", 10))
+		test = HOST_CMD_TEST_PACKET;
+
+	if (!strncmp(buf, "test K", 6))
+		test = HOST_CMD_TEST_K;
+
+	if (!strncmp(buf, "test J", 6))
+		test = HOST_CMD_TEST_J;
+
+	if (!strncmp(buf, "test SE0 NAK", 12))
+		test = HOST_CMD_TEST_SE0_NAK;
+
+	if (test) {
+		xhci_info(xhci, "set test mode %d\n", test);
+
+		/* set the Run/Stop in USBCMD to 0 */
+		addr = &xhci->op_regs->command;
+		temp = readl(addr);
+		temp &= ~CMD_RUN;
+		writel(temp, addr);
+
+		/*  wait for HCHalted */
+		xhci_halt(xhci);
+
+		/* test mode */
+		for (i = 0; i < ports; i++) {
+			addr = &xhci->op_regs->port_power_base +
+				NUM_PORT_REGS * (i & 0xff);
+			temp = readl(addr);
+			temp &= ~(0xf << PMSC_PORT_TEST_CTRL_OFFSET);
+			temp |= (test << PMSC_PORT_TEST_CTRL_OFFSET);
+			writel(temp, addr);
+		}
+	} else {
+		xhci_info(xhci, "test mode command error\n");
+	}
+
+	return count;
+}
+
+static int xhci_mtk_test_mode_show(struct seq_file *s, void *unused)
+{
+	seq_puts(s, "xhci_mtk test mode\n");
+	return 0;
+}
+
+
+static int xhci_mtk_test_mode_open(struct inode *inode,
+					struct file *file)
+{
+	return single_open(file, xhci_mtk_test_mode_show,
+					   inode->i_private);
+}
+
+static const struct file_operations xhci_mtk_test_mode_fops = {
+	.open = xhci_mtk_test_mode_open,
+	.write = xhci_mtk_test_mode_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int xhci_mtk_dbg_init(struct xhci_hcd_mtk *mtk)
+{
+	int ret = 0;
+	struct dentry *root;
+	struct dentry *file;
+
+	root = debugfs_create_dir("xhci_mtk_dbg", NULL);
+	if (IS_ERR_OR_NULL(root)) {
+		ret = PTR_ERR(root);
+		goto err0;
+	}
+
+	file = debugfs_create_file("testmode", 0644, root,
+						mtk, &xhci_mtk_test_mode_fops);
+	if (IS_ERR_OR_NULL(file)) {
+		ret = PTR_ERR(file);
+		goto err0;
+	}
+
+	mtk->debugfs_root = root;
+
+	return 0;
+err0:
+	return ret;
+}
+
+static int xhci_mtk_dbg_exit(struct xhci_hcd_mtk *mtk)
+{
+	debugfs_remove_recursive(mtk->debugfs_root);
+	return 0;
+}
+#endif
+
 
 enum ssusb_uwk_vers {
 	SSUSB_UWK_V1 = 1,
@@ -206,19 +337,6 @@ static int xhci_mtk_ssusb_config(struct xhci_hcd_mtk *mtk)
 	return xhci_mtk_host_enable(mtk);
 }
 
-/* ignore the error if the clock does not exist */
-static struct clk *optional_clk_get(struct device *dev, const char *id)
-{
-	struct clk *opt_clk;
-
-	opt_clk = devm_clk_get(dev, id);
-	/* ignore error number except EPROBE_DEFER */
-	if (IS_ERR(opt_clk) && (PTR_ERR(opt_clk) != -EPROBE_DEFER))
-		opt_clk = NULL;
-
-	return opt_clk;
-}
-
 static int xhci_mtk_clks_get(struct xhci_hcd_mtk *mtk)
 {
 	struct device *dev = mtk->dev;
@@ -229,15 +347,15 @@ static int xhci_mtk_clks_get(struct xhci_hcd_mtk *mtk)
 		return PTR_ERR(mtk->sys_clk);
 	}
 
-	mtk->ref_clk = optional_clk_get(dev, "ref_ck");
+	mtk->ref_clk = devm_clk_get_optional(dev, "ref_ck");
 	if (IS_ERR(mtk->ref_clk))
 		return PTR_ERR(mtk->ref_clk);
 
-	mtk->mcu_clk = optional_clk_get(dev, "mcu_ck");
+	mtk->mcu_clk = devm_clk_get_optional(dev, "mcu_ck");
 	if (IS_ERR(mtk->mcu_clk))
 		return PTR_ERR(mtk->mcu_clk);
 
-	mtk->dma_clk = optional_clk_get(dev, "dma_ck");
+	mtk->dma_clk = devm_clk_get_optional(dev, "dma_ck");
 	return PTR_ERR_OR_ZERO(mtk->dma_clk);
 }
 
@@ -557,7 +675,10 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	ret = usb_add_hcd(xhci->shared_hcd, irq, IRQF_SHARED);
 	if (ret)
 		goto dealloc_usb2_hcd;
-
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/* Yichun.Chen	PSW.BSP.CHG  2019-02-02  for host tune test mode */
+	xhci_mtk_dbg_init(mtk);
+#endif
 	return 0;
 
 dealloc_usb2_hcd:
@@ -592,18 +713,24 @@ static int xhci_mtk_remove(struct platform_device *dev)
 	struct xhci_hcd	*xhci = hcd_to_xhci(hcd);
 	struct usb_hcd  *shared_hcd = xhci->shared_hcd;
 
+	pm_runtime_put_noidle(&dev->dev);
+	pm_runtime_disable(&dev->dev);
+
+	xhci->xhc_state |= XHCI_STATE_REMOVING;
+
 	usb_remove_hcd(shared_hcd);
 	xhci->shared_hcd = NULL;
 	device_init_wakeup(&dev->dev, false);
-
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/* Yichun.Chen	PSW.BSP.CHG  2019-02-02  for host tune test mode */
+	xhci_mtk_dbg_exit(mtk);
+#endif
 	usb_remove_hcd(hcd);
 	usb_put_hcd(shared_hcd);
 	usb_put_hcd(hcd);
 	xhci_mtk_sch_exit(mtk);
 	xhci_mtk_clks_disable(mtk);
 	xhci_mtk_ldos_disable(mtk);
-	pm_runtime_put_sync(&dev->dev);
-	pm_runtime_disable(&dev->dev);
 
 	return 0;
 }
