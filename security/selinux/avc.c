@@ -33,6 +33,10 @@
 #include "avc.h"
 #include "avc_ss.h"
 #include "classmap.h"
+#ifdef OPLUS_FEATURE_SELINUX_CONTROL_LOG
+//sijiaquan@ANDROID.SELINUX, 2018/01/13, Add for disable selinux denied logs in MP version
+#include <soc/oplus/system/proc.h>
+#endif /* OPLUS_FEATURE_SELINUX_CONTROL_LOG */
 
 #define AVC_CACHE_SLOTS			512
 #define AVC_DEF_CACHE_THRESHOLD		512
@@ -756,6 +760,23 @@ static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
 	if (ad->selinux_audit_data->denied) {
 		audit_log_format(ab, " permissive=%u",
 				 ad->selinux_audit_data->result ? 0 : 1);
+#ifdef CONFIG_MTK_SELINUX_AEE_WARNING
+		{
+			struct nlmsghdr *nlh;
+			char *selinux_data;
+
+			if (enforcing_enabled(ad->selinux_audit_data->state)
+					&& ab) {
+				nlh = nlmsg_hdr(audit_get_skb(ab));
+				selinux_data = nlmsg_data(nlh);
+
+				if (mtk_audit_hook
+						&& nlh->nlmsg_type != AUDIT_EOE
+						&& nlh->nlmsg_type == 1400)
+					mtk_audit_hook(selinux_data);
+			}
+		}
+#endif
 	}
 }
 
@@ -767,6 +788,12 @@ noinline int slow_avc_audit(struct selinux_state *state,
 {
 	struct common_audit_data stack_data;
 	struct selinux_audit_data sad;
+
+#ifdef OPLUS_FEATURE_SELINUX_CONTROL_LOG
+//sijiaquan@ANDROID.SELINUX, 2018/01/13, Add for disable selinux denied logs in MP version
+	if (!is_avc_audit_enable())
+		return 0;
+#endif /* OPLUS_FEATURE_SELINUX_CONTROL_LOG */
 
 	if (!a) {
 		a = &stack_data;
