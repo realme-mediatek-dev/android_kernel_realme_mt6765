@@ -1037,6 +1037,18 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 		index = fls(size - 1);
 	}
 
+#if defined(OPLUS_FEATURE_MEMLEAK_DETECT) && defined(CONFIG_KMALLOC_DEBUG)
+	/* Kui.Zhang@tech.kernel.mm, 2020-02-13, try to kmalloc from kmalloc_debug
+	 * caches fisrt.
+	 */
+	if (unlikely(kmalloc_debug_enable)) {
+		struct kmem_cache *s;
+
+		s = (struct kmem_cache *)atomic64_read(&kmalloc_debug_caches[kmalloc_type(flags)][index]);
+		if (unlikely(s))
+			return s;
+	}
+#endif
 	return kmalloc_caches[kmalloc_type(flags)][index];
 }
 
@@ -1138,9 +1150,16 @@ new_kmalloc_cache(int idx, int type, slab_flags_t flags)
 		name = kmalloc_info[idx].name;
 	}
 
+#if defined(CONFIG_OPLUS_FEATURE_SLABTRACE_DEBUG)
+/* wen.luo@BSP.Kernel.Stability 2020-03-10, simple slabtrce for memleak analysis */
+	kmalloc_caches[type][idx] = create_kmalloc_cache(name,
+					kmalloc_info[idx].size, flags|SLAB_STORE_USER, 0,
+					kmalloc_info[idx].size);
+#else
 	kmalloc_caches[type][idx] = create_kmalloc_cache(name,
 					kmalloc_info[idx].size, flags, 0,
 					kmalloc_info[idx].size);
+#endif
 }
 
 /*
