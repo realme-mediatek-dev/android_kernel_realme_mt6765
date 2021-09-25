@@ -92,6 +92,7 @@
 #include <linux/rodata_test.h>
 #include <linux/jump_label.h>
 #include <linux/mem_encrypt.h>
+#include <linux/bootprof.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -101,6 +102,11 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/initcall.h>
+
+//#ifdef OPLUS_FEATURE_PHOENIX
+// Kun.Hu@TECH.BSP.Stability.PHOENIX_PROJECT 2019/06/11, Add for phoenix project
+#include "../drivers/soc/oplus/system/oppo_phoenix/oppo_phoenix.h"
+//#endif  //OPLUS_FEATURE_PHOENIX
 
 static int kernel_init(void *);
 
@@ -605,6 +611,12 @@ asmlinkage __visible void __init start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
+	
+	//#ifdef OPLUS_FEATURE_PHOENIX
+	// Kun.Hu@PSW.TECH.RELIABILTY, 2018/11/15, add for project phoenix(hang oppo)
+	if(phx_set_boot_stage)
+		phx_set_boot_stage(KERNEL_MM_INIT_DONE);
+    //#endif //OPLUS_FEATURE_PHOENIX
 
 	ftrace_init();
 
@@ -681,6 +693,12 @@ asmlinkage __visible void __init start_kernel(void)
 
 	early_boot_irqs_disabled = false;
 	local_irq_enable();
+    //#ifdef OPLUS_FEATURE_PHOENIX
+    // Kun.Hu@TECH.BSP.Stability.PHOENIX_PROJECT 2019/06/11, Add for phoenix project
+    if(phx_set_boot_stage) {
+        phx_set_boot_stage(KERNEL_LOCAL_IRQ_ENABLE);
+    }
+    //#endif
 
 	kmem_cache_init_late();
 
@@ -754,6 +772,12 @@ asmlinkage __visible void __init start_kernel(void)
 	cgroup_init();
 	taskstats_init_early();
 	delayacct_init();
+    //#ifdef OPLUS_FEATURE_PHOENIX
+    // Kun.Hu@PSW.TECH.RELIABILTY, 2018/11/15, add for project phoenix(hang oppo)
+    if(phx_set_boot_stage) {
+        phx_set_boot_stage(KERNEL_DELAYACCT_INIT_DONE);
+    }
+    //#endif
 
 	check_bugs();
 
@@ -904,17 +928,24 @@ static inline void do_trace_initcall_finish(initcall_t fn, int ret)
 }
 #endif /* !TRACEPOINTS_ENABLED */
 
+
 int __init_or_module do_one_initcall(initcall_t fn)
 {
 	int count = preempt_count();
 	char msgbuf[64];
 	int ret;
+#ifdef CONFIG_MTPROF
+	unsigned long long ts;
+#endif
 
 	if (initcall_blacklisted(fn))
 		return -EPERM;
 
 	do_trace_initcall_start(fn);
+	BOOTPROF_TIME_LOG_START(ts);
 	ret = fn();
+	BOOTPROF_TIME_LOG_END(ts);
+	bootprof_initcall(fn, ts);
 	do_trace_initcall_finish(fn, ret);
 
 	msgbuf[0] = 0;
@@ -1005,10 +1036,21 @@ static void __init do_basic_setup(void)
 	cpuset_init_smp();
 	shmem_init();
 	driver_init();
+    //#ifdef OPLUS_FEATURE_PHOENIX
+    // Kun.Hu@TECH.BSP.Stability.PHOENIX_PROJECT 2019/06/11, Add for phoenix project
+    if(phx_set_boot_stage) {
+        phx_set_boot_stage(KERNEL_DRIVER_INIT_DONE);
+    }
+    //#endif
 	init_irq_proc();
 	do_ctors();
 	usermodehelper_enable();
 	do_initcalls();
+    //#ifdef OPLUS_FEATURE_PHOENIX
+    // Kun.Hu@TECH.BSP.Stability.PHOENIX_PROJECT 2019/06/11, Add for phoenix project
+    if(phx_set_boot_stage)
+        phx_set_boot_stage(KERNEL_DO_INITCALLS_DONE);
+    //#endif
 }
 
 static void __init do_pre_smp_initcalls(void)
@@ -1110,6 +1152,15 @@ static int __ref kernel_init(void *unused)
 	numa_default_policy();
 
 	rcu_end_inkernel_boot();
+	
+    //#ifdef OPLUS_FEATURE_PHOENIX
+    // Kun.Hu@TECH.BSP.Stability.PHOENIX_PROJECT 2019/06/11, Add for phoenix project
+    if(phx_set_boot_stage) {
+        phx_set_boot_stage(KERNEL_INIT_DONE);
+    }
+    //#endif
+
+	bootprof_log_boot("Kernel_init_done");
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
@@ -1176,6 +1227,13 @@ static noinline void __init kernel_init_freeable(void)
 	page_ext_init();
 
 	do_basic_setup();
+
+    //#ifdef OPLUS_FEATURE_PHOENIX
+    // Kun.Hu@TECH.BSP.Stability.PHOENIX_PROJECT 2019/06/11, Add for phoenix project
+    if(phx_set_boot_stage) {
+        phx_set_boot_stage(KERNEL_DO_BASIC_SETUP_DONE);
+    }
+    //#endif
 
 	/* Open the /dev/console on the rootfs, this should never fail */
 	if (ksys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)
