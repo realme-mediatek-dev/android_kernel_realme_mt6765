@@ -95,11 +95,35 @@
 #include <linux/flex_array.h>
 #include <linux/posix-timers.h>
 #include <linux/cpufreq_times.h>
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+#include <linux/vm_anti_fragment.h>
+#endif
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
 
 #include "../../lib/kstrtox.h"
+
+#ifdef OPLUS_FEATURE_HEALTHINFO
+// Liujie.Xie@TECH.Kernel.Sched, 2019/08/29, add for jank monitor
+#ifdef CONFIG_OPPO_JANK_INFO
+#include <linux/oppo_healthinfo/oppo_jank_monitor.h>
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
+
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+#define GLOBAL_SYSTEM_UID KUIDT_INIT(1000)
+#define GLOBAL_SYSTEM_GID KGIDT_INIT(1000)
+extern const struct file_operations proc_static_ux_operations;
+extern bool is_special_entry(struct dentry *dentry, const char* special_proc);
+#endif /* OPLUS_FEATURE_UIFIRST */
+
+#ifdef VENDOR_EDIT
+/* Wen.Luo@BSP.Kernel.Stability, 2019/04/26, Add for Process memory statistics */
+extern size_t get_ion_heap_by_pid(pid_t pid);
+extern size_t get_gl_mem_by_pid(pid_t pid);
+#endif
 
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
@@ -371,6 +395,59 @@ static const struct file_operations proc_pid_cmdline_ops = {
 	.read	= proc_pid_cmdline_read,
 	.llseek	= generic_file_llseek,
 };
+
+#ifdef VENDOR_EDIT
+/* Wen.Luo@BSP.Kernel.Stability, 2019/04/26, Add for Process memory statistics */
+#define P2K(x) ((x) << (PAGE_SHIFT - 10))	/* Converts #Pages to KB */
+
+static ssize_t proc_pid_real_phymemory_read(struct file *file, char __user *buf,
+				     size_t _count, loff_t *pos)
+{
+	struct task_struct *tsk;
+	struct task_struct *p;
+	char buffer[128];
+	unsigned long rss = 0;
+	unsigned long rswap = 0;
+	unsigned long ion = 0;
+	unsigned long gpu = 0;
+	unsigned long totalram_size = 0;
+	size_t len;
+
+	BUG_ON(*pos < 0);
+
+	tsk = get_proc_task(file_inode(file));   //first_tid find will get_proc_task
+	if (!tsk)
+		return 0;
+	if (tsk->flags & PF_KTHREAD) {
+		put_task_struct(tsk);
+		return 0;
+	}
+	put_task_struct(tsk);
+
+	tsk = tsk->group_leader;
+	get_task_struct(tsk);
+	ion = get_ion_heap_by_pid(tsk->pid);
+	gpu = get_gl_mem_by_pid(tsk->pid);
+
+	p = find_lock_task_mm(tsk);
+	if (p) {
+		rss = P2K(get_mm_rss(p->mm));
+		rswap = P2K(get_mm_counter(p->mm, MM_SWAPENTS));
+		task_unlock(p);
+	}
+	totalram_size = ion + gpu + rss + rswap;
+	put_task_struct(tsk);
+
+	len = snprintf(buffer, sizeof(buffer), "RSS:%luKB \nRswap:%luKB \nION:%luKB \nGPU:%luKB \nTotalsize:%luKB \n",
+		rss, rswap, ion, gpu, totalram_size);
+	return simple_read_from_buffer(buf, _count, pos, buffer, len);
+}
+
+static const struct file_operations proc_pid_real_phymemory_ops = {
+	.read	= proc_pid_real_phymemory_read,
+	.llseek	= generic_file_llseek,
+};
+#endif
 
 #ifdef CONFIG_KALLSYMS
 /*
@@ -1839,6 +1916,14 @@ static int pid_revalidate(struct dentry *dentry, unsigned int flags)
 
 	if (task) {
 		pid_update_inode(task, inode);
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+		if (is_special_entry(dentry, "static_ux")) {
+			inode->i_uid = GLOBAL_SYSTEM_UID;
+			inode->i_gid = GLOBAL_SYSTEM_GID;
+		}
+#endif /* OPLUS_FEATURE_UIFIRST */
+
 		put_task_struct(task);
 		return 1;
 	}
@@ -2947,6 +3032,12 @@ static int proc_pid_patch_state(struct seq_file *m, struct pid_namespace *ns,
 static const struct file_operations proc_task_operations;
 static const struct inode_operations proc_task_inode_operations;
 
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+extern int proc_pid_reserve_area(struct seq_file *m, struct pid_namespace *ns,
+		struct pid *pid, struct task_struct *task);
+extern const struct file_operations proc_pid_rmaps_operations;
+#endif
+
 static const struct pid_entry tgid_base_stuff[] = {
 	DIR("task",       S_IRUGO|S_IXUGO, proc_task_inode_operations, proc_task_operations),
 	DIR("fd",         S_IRUSR|S_IXUSR, proc_fd_inode_operations, proc_fd_operations),
@@ -2975,6 +3066,14 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+	REG("reserve_maps", S_IRUSR, proc_pid_rmaps_operations),
+	ONE("reserve_area", S_IRUSR, proc_pid_reserve_area),
+#endif
+#if defined(OPLUS_FEATURE_VIRTUAL_RESERVE_MEMORY) && defined(CONFIG_VIRTUAL_RESERVE_MEMORY)
+	ONE("vm_search_two_way", S_IRUSR, proc_pid_search_two_way),
+#endif
+
 #ifdef CONFIG_NUMA
 	REG("numa_maps",  S_IRUGO, proc_pid_numa_maps_operations),
 #endif
@@ -2985,6 +3084,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("mounts",     S_IRUGO, proc_mounts_operations),
 	REG("mountinfo",  S_IRUGO, proc_mountinfo_operations),
 	REG("mountstats", S_IRUSR, proc_mountstats_operations),
+#ifdef CONFIG_PROCESS_RECLAIM
+	REG("reclaim", 0222, proc_reclaim_operations),
+#endif
 #ifdef CONFIG_PROC_PAGE_MONITOR
 	REG("clear_refs", S_IWUSR, proc_clear_refs_operations),
 	REG("smaps",      S_IRUGO, proc_pid_smaps_operations),
@@ -3045,6 +3147,18 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_CPU_FREQ_TIMES
 	ONE("time_in_state", 0444, proc_time_in_state_show),
 #endif
+#ifdef OPLUS_FEATURE_HEALTHINFO
+// Liujie.Xie@TECH.Kernel.Sched, 2019/08/29, add for jank monitor
+#ifdef CONFIG_OPPO_JANK_INFO
+	REG("jank_info", S_IRUGO | S_IWUGO, proc_jank_trace_operations),
+#endif
+#endif /* OPLUS_FEATURE_HEALTHINFO */
+
+#ifdef VENDOR_EDIT
+/* Wen.Luo@BSP.Kernel.Stability, 2019/04/26, Add for Process memory statistics */
+	REG("real_phymemory",    S_IRUGO, proc_pid_real_phymemory_ops),
+#endif
+
 };
 
 static int proc_tgid_base_readdir(struct file *file, struct dir_context *ctx)
@@ -3434,6 +3548,15 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_CPU_FREQ_TIMES
 	ONE("time_in_state", 0444, proc_time_in_state_show),
+#endif
+#ifdef OPLUS_FEATURE_UIFIRST
+// XieLiujie@BSP.KERNEL.PERFORMANCE, 2020/05/25, Add for UIFirst
+	REG("static_ux", S_IRUGO | S_IWUGO, proc_static_ux_operations),
+#endif /* OPLUS_FEATURE_UIFIRST */
+
+#ifdef VENDOR_EDIT
+/* Wen.Luo@BSP.Kernel.Stability, 2019/04/26, Add for Process memory statistics */
+	REG("real_phymemory",   S_IRUGO, proc_pid_real_phymemory_ops),
 #endif
 };
 
