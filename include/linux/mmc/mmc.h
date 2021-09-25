@@ -93,6 +93,12 @@
 #define MMC_EXECUTE_WRITE_TASK   47   /* adtc [20:16] task id    R1  */
 #define MMC_CMDQ_TASK_MGMT       48   /* ac   [20:16] task id    R1b */
 
+#ifdef VENDOR_EDIT
+//weizhenxi@BSP.Storage.Emmc, 2020/11/26 add for getting sandisk emmc health info
+#define MMC_SANDISK_ENABLE_DEVICE_REPORT_VENDOR_CMD   62             /* adtc. R1          */
+#define MMC_SANDISK_READ_DEVICE_REPORT_VENDOR_CMD     63             /* adtc. R1          */
+#endif
+
 static inline bool mmc_op_multi(u32 opcode)
 {
 	return opcode == MMC_WRITE_MULTIPLE_BLOCK ||

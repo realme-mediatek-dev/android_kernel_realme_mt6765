@@ -8,6 +8,8 @@
 #include <linux/sched/numa_balancing.h>
 #include <linux/tracepoint.h>
 #include <linux/binfmts.h>
+#include "eas_plus.h"
+
 
 /*
  * Tracepoint for calling kthread_stop, performed to end a kthread:
@@ -151,6 +153,12 @@ TRACE_EVENT(sched_switch,
 		__array(	char,	next_comm,	TASK_COMM_LEN	)
 		__field(	pid_t,	next_pid			)
 		__field(	int,	next_prio			)
+#if defined(CONFIG_MTK_SCHED_TRACERS) && defined(CONFIG_CGROUPS)
+		__field(int,	prev_cgrp_id)
+		__field(int,	next_cgrp_id)
+		__field(int,	prev_st_cgrp_id)
+		__field(int,	next_st_cgrp_id)
+#endif
 	),
 
 	TP_fast_assign(
@@ -161,9 +169,45 @@ TRACE_EVENT(sched_switch,
 		memcpy(__entry->prev_comm, prev->comm, TASK_COMM_LEN);
 		__entry->next_pid	= next->pid;
 		__entry->next_prio	= next->prio;
+#if defined(CONFIG_MTK_SCHED_TRACERS) && defined(CONFIG_CGROUPS)
+#ifdef CONFIG_CPUSETS
+		__entry->prev_cgrp_id	= prev->cgroups->subsys[0]->cgroup->id;
+		__entry->next_cgrp_id	= next->cgroups->subsys[0]->cgroup->id;
+#else
+		__entry->prev_cgrp_id	= 0;
+		__entry->next_cgrp_id	= 0;
+#endif
+#ifdef CONFIG_SCHED_TUNE
+		__entry->prev_st_cgrp_id = prev->cgroups->subsys[3]->cgroup->id;
+		__entry->next_st_cgrp_id = next->cgroups->subsys[3]->cgroup->id;
+#else
+		__entry->prev_st_cgrp_id = 0;
+		__entry->next_st_cgrp_id = 0;
+#endif
+#endif
 		/* XXX SCHED_DEADLINE */
 	),
 
+#if defined(CONFIG_MTK_SCHED_TRACERS) && defined(CONFIG_CGROUPS)
+	TP_printk("prev_comm=%s prev_pid=%d prev_prio=%d prev_state=%s%s ==> next_comm=%s next_pid=%d next_prio=%d prev->cgrp=%d next->cgrp=%d prev->st=%d next->st=%d",
+		__entry->prev_comm, __entry->prev_pid, __entry->prev_prio,
+
+		(__entry->prev_state & (TASK_REPORT_MAX - 1)) ?
+		  __print_flags(__entry->prev_state & (TASK_REPORT_MAX - 1), "|",
+				{ 0x01, "S" }, { 0x02, "D" }, { 0x04, "T" },
+				{ 0x08, "t" }, { 0x10, "X" }, { 0x20, "Z" },
+				{ 0x40, "P" }, { 0x80, "I" }) :
+		  "R",
+
+		__entry->prev_state & TASK_REPORT_MAX ? "+" : "",
+		__entry->next_comm, __entry->next_pid, __entry->next_prio
+		, __entry->prev_cgrp_id
+		, __entry->next_cgrp_id
+		, __entry->prev_st_cgrp_id
+		, __entry->next_st_cgrp_id
+	)
+
+#else
 	TP_printk("prev_comm=%s prev_pid=%d prev_prio=%d prev_state=%s%s ==> next_comm=%s next_pid=%d next_prio=%d",
 		__entry->prev_comm, __entry->prev_pid, __entry->prev_prio,
 
@@ -181,6 +225,7 @@ TRACE_EVENT(sched_switch,
 
 		__entry->prev_state & TASK_REPORT_MAX ? "+" : "",
 		__entry->next_comm, __entry->next_pid, __entry->next_prio)
+#endif
 );
 
 /*
@@ -334,6 +379,29 @@ TRACE_EVENT(sched_process_exec,
 
 	TP_printk("filename=%s pid=%d old_pid=%d", __get_str(filename),
 		  __entry->pid, __entry->old_pid)
+);
+
+/*
+ * Tracepoint for schedutil governor
+ */
+TRACE_EVENT(sched_util,
+	TP_PROTO(int cid, unsigned int next_freq, u64 time),
+	TP_ARGS(cid, next_freq, time),
+	TP_STRUCT__entry(
+		__field(int, cid)
+		__field(unsigned int, next_freq)
+		__field(u64, time)
+	),
+	TP_fast_assign(
+		__entry->cid		= cid;
+		__entry->next_freq	= next_freq;
+		__entry->time		= time;
+	),
+	TP_printk("cid=%d next=%u last_freq_update_time=%lld",
+		__entry->cid,
+		__entry->next_freq,
+		__entry->time
+	)
 );
 
 /*
@@ -1028,7 +1096,197 @@ TRACE_EVENT(sched_overutilized,
 		__entry->overutilized)
 );
 
+#if defined(OPLUS_FEATURE_UIFIRST) && defined(CONFIG_SCHED_WALT)
+extern unsigned int walt_ravg_window;
+extern bool walt_disabled;
+
+#define walt_util(util_var, demand_sum) {\
+	u64 sum = demand_sum << SCHED_CAPACITY_SHIFT;\
+	do_div(sum, walt_ravg_window);\
+	util_var = (typeof(util_var))sum;\
+	}
+
+TRACE_EVENT(walt_update_history,
+
+	TP_PROTO(struct rq *rq, struct task_struct *p, u32 runtime, u32 avg, int samples,
+			int evt),
+
+	TP_ARGS(rq, p, runtime, avg, samples, evt),
+
+	TP_STRUCT__entry(
+		__array(	char,	comm,   TASK_COMM_LEN	)
+		__field(	pid_t,	pid			)
+		__field(unsigned int,	runtime			)
+		__field(unsigned int,	avg			)
+		__field(	 int,	samples			)
+		__field(	 int,	evt			)
+		__field(	 u64,	demand			)
+		__field(unsigned int,	walt_avg		)
+		__field(unsigned int,	pelt_avg		)
+		__array(	 u32,	hist, RAVG_HIST_SIZE_MAX)
+		__field(	 int,	cpu			)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+		__entry->pid            = p->pid;
+		__entry->runtime        = runtime;
+		__entry->avg        = avg;
+		__entry->samples        = samples;
+		__entry->evt            = evt;
+		__entry->demand         = p->ravg.demand;
+		walt_util(__entry->walt_avg,__entry->demand);
+		__entry->pelt_avg	= p->se.avg.util_avg;
+		memcpy(__entry->hist, p->ravg.sum_history,
+					RAVG_HIST_SIZE_MAX * sizeof(u32));
+		__entry->cpu            = rq->cpu;
+	),
+
+	TP_printk("pid=%d comm=%s runtime=%u avg=%u samples=%d event=%d demand=%llu ravg_window=%u"
+		" walt=%u pelt=%u hist0=%u hist1=%u hist2=%u hist3=%u hist4=%u cpu=%d",
+		__entry->pid, __entry->comm,
+		__entry->runtime, __entry->avg,
+		__entry->samples, __entry->evt,
+		__entry->demand,
+		walt_ravg_window,
+		__entry->walt_avg,
+		__entry->pelt_avg,
+		__entry->hist[0], __entry->hist[1],
+		__entry->hist[2], __entry->hist[3],
+		__entry->hist[4], __entry->cpu)
+);
+
+struct rq;
+
+TRACE_EVENT(walt_update_task_ravg,
+
+	TP_PROTO(struct task_struct *p, struct rq *rq, int evt,
+						u64 wallclock, u64 irqtime),
+
+	TP_ARGS(p, rq, evt, wallclock, irqtime),
+
+	TP_STRUCT__entry(
+		__array(	char,	comm,   TASK_COMM_LEN	)
+		__field(	pid_t,	pid			)
+		__field(	pid_t,	cur_pid			)
+		__field(	u64,	wallclock		)
+		__field(	u64,	mark_start		)
+		__field(	u64,	delta_m			)
+		__field(	u64,	win_start		)
+		__field(	u64,	delta			)
+		__field(	u64,	irqtime			)
+		__array(    char,   evt, 16			)
+		__field(unsigned int,	demand			)
+		__field(unsigned int,	sum			)
+		__field(	 int,	cpu			)
+		__field(	u32,	curr_window		)
+		__field(	u32,	prev_window		)
+		__field(	u32,	active_windows		)
+	),
+
+	TP_fast_assign(
+			static const char* walt_event_names[] =
+			{
+				"PUT_PREV_TASK",
+				"PICK_NEXT_TASK",
+				"TASK_WAKE",
+				"TASK_MIGRATE",
+				"TASK_UPDATE",
+				"IRQ_UPDATE"
+			};
+		__entry->wallclock      = wallclock;
+		__entry->win_start      = rq->window_start;
+		__entry->delta          = (wallclock - rq->window_start);
+		strcpy(__entry->evt, walt_event_names[evt]);
+		__entry->cpu            = rq->cpu;
+		__entry->cur_pid        = rq->curr->pid;
+		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+		__entry->pid            = p->pid;
+		__entry->mark_start     = p->ravg.mark_start;
+		__entry->delta_m        = (wallclock - p->ravg.mark_start);
+		__entry->demand         = p->ravg.demand;
+		__entry->sum            = p->ravg.sum;
+		__entry->irqtime        = irqtime;
+		__entry->curr_window	= p->ravg.curr_window;
+		__entry->prev_window	= p->ravg.prev_window;
+		__entry->active_windows	= p->ravg.active_windows;
+	),
+
+	TP_printk("wallclock=%llu window_start=%llu delta=%llu event=%s cpu=%d cur_pid=%d pid=%d comm=%s"
+		" mark_start=%llu delta_m=%llu demand=%u sum=%u irqtime=%llu"
+		" cur_window=%u prev_window=%u  active_windows=%u",
+		__entry->wallclock, __entry->win_start, __entry->delta,
+		__entry->evt, __entry->cpu, __entry->cur_pid,
+		__entry->pid, __entry->comm, __entry->mark_start,
+		__entry->delta_m, __entry->demand,
+		__entry->sum, __entry->irqtime,
+		__entry->curr_window, __entry->prev_window,
+		__entry->active_windows
+		)
+);
+
+TRACE_EVENT(walt_task_util,
+
+		TP_PROTO(struct task_struct *p),
+
+		TP_ARGS(p),
+
+		TP_STRUCT__entry(
+			__array(	char,	comm,   TASK_COMM_LEN	)
+			__field(	pid_t,	pid			)
+			__field(unsigned long,	util_demand		)
+			__field(unsigned long,	util_sum		)
+			__field(unsigned long,	util_curr_window	)
+			__field(unsigned long,	util_prev_window		)
+		),
+
+		TP_fast_assign(
+			memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+			__entry->pid            = p->pid;
+			walt_util(__entry->util_demand, p->ravg.demand);
+			walt_util(__entry->util_sum, p->ravg.sum);
+			walt_util(__entry->util_curr_window, p->ravg.curr_window);
+			walt_util(__entry->util_prev_window, p->ravg.prev_window);
+		),
+
+	TP_printk("pid=%d comm=%s util_demand=%lu util_sum=%lu util_curr_window=%lu util_prev_window=%lu",
+			__entry->pid, __entry->comm, __entry->util_demand, __entry->util_sum,
+			__entry->util_curr_window, __entry->util_prev_window)
+);
+#endif /* defined(OPLUS_FEATURE_UIFIRST) && defined(CONFIG_SCHED_WALT) */
+
 #endif /* CONFIG_SMP */
+
+#ifdef CONFIG_UCLAMP_TASK
+
+TRACE_EVENT(schedutil_uclamp_util,
+
+	TP_PROTO(int cpu, unsigned long util, unsigned long util_min,
+		unsigned long util_max),
+
+	TP_ARGS(cpu, util, util_min, util_max),
+
+	TP_STRUCT__entry(
+		__field(int,		cpu)
+		__field(unsigned long,	util)
+		__field(unsigned long,	util_min)
+		__field(unsigned long,	util_max)
+	),
+
+	TP_fast_assign(
+		__entry->cpu		= cpu;
+		__entry->util		= util;
+		__entry->util_min	= util_min;
+		__entry->util_max	= util_max;
+	),
+
+	TP_printk("cpu=%d util=%lu util_min=%lu util_max=%lu",
+		  __entry->cpu,
+		  __entry->util,
+		  __entry->util_min,
+		  __entry->util_max)
+);
+#endif /* CONFIG_UCLAMP_TASK */
 #endif /* _TRACE_SCHED_H */
 
 /* This part must be outside protection */

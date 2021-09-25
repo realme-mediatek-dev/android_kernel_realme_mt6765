@@ -21,18 +21,34 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 
+//#ifdef OPLUS_BUG_STABILITY
+/*jianbin.zhang@PSW.MultiMedia.Display, 2020/05/21,modify for multibits backlight.*/
+int get_half_backlight_level(void);
+int get_full_backlight_level(void);
+//#endif
+
 struct device;
 /*
  * LED Core
  */
-
+ //#ifndef OPLUS_BUG_STABILITY
+/*jianbin.zhang@PSW.MultiMedia.Display, 2020/05/21,modify for multibits backlight.*/
+/*
 enum led_brightness {
 	LED_OFF		= 0,
 	LED_ON		= 1,
 	LED_HALF	= 127,
 	LED_FULL	= 255,
 };
-
+*/
+//#else
+enum led_brightness {
+	LED_OFF		= 0,
+	LED_ON		= 1,
+};
+#define LED_HALF  (get_half_backlight_level())
+#define LED_FULL  (get_full_backlight_level())
+//#endif
 struct led_classdev {
 	const char		*name;
 	enum led_brightness	 brightness;

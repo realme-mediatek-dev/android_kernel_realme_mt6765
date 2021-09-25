@@ -188,6 +188,11 @@ struct sock_common {
 	struct proto		*skc_prot;
 	possible_net_t		skc_net;
 
+	//#ifdef OPLUS_FEATURE_WIFI_SLA
+	//HuangJunyuan@CONNECTIVITY.WIFI.INTERNET.1197891, 2018/04/10,Add code for appo sla function
+	u32 skc_oplus_mark;
+	//#endif /* OPLUS_FEATURE_WIFI_SLA */
+
 #if IS_ENABLED(CONFIG_IPV6)
 	struct in6_addr		skc_v6_daddr;
 	struct in6_addr		skc_v6_rcv_saddr;
@@ -364,6 +369,10 @@ struct sock {
 #define sk_incoming_cpu		__sk_common.skc_incoming_cpu
 #define sk_flags		__sk_common.skc_flags
 #define sk_rxhash		__sk_common.skc_rxhash
+//#ifdef OPLUS_FEATURE_WIFI_SLA
+//HuangJunyuan@CONNECTIVITY.WIFI.INTERNET.1197891, 2018/04/10,Add code for appo sla function
+#define oplus_sla_mark   __sk_common.skc_oplus_mark
+//#endif /* OPLUS_FEATURE_WIFI_SLA */
 
 	socket_lock_t		sk_lock;
 	atomic_t		sk_drops;
@@ -1933,6 +1942,12 @@ static inline void sk_dst_confirm(struct sock *sk)
 
 static inline void sock_confirm_neigh(struct sk_buff *skb, struct neighbour *n)
 {
+	#ifdef OPLUS_BUG_STABILITY
+	//WangWei@CONNECTIVITY.WIFI.NETWORK.1357567, 2018/04/27.
+	//Remove for [1357567],some AP doesn't send arp when it needs to send data to DUT
+	//We remove this code to send arp more frequently to notify our mac to AP
+	return;
+	#endif /* OPLUS_BUG_STABILITY */
 	if (skb_get_dst_pending_confirm(skb)) {
 		struct sock *sk = skb->sk;
 		unsigned long now = jiffies;

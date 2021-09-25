@@ -163,6 +163,13 @@ struct fb_cursor_user {
 #define FB_EARLY_EVENT_BLANK		0x10
 /*      A hardware display blank revert early change occurred */
 #define FB_R_EARLY_EVENT_BLANK		0x11
+//#ifdef OPLUS_FEATURE_ONSCREENFINGERPRINT
+/*
+* JianBin.Zhang@PSW.MM.Display.LCD.Stability, 2020/05/29,
+* add for fingerprint notify frigger
+*/
+#define MTK_ONSCREENFINGERPRINT_EVENT 0x20
+//#endif /*OPLUS_FEATURE_ONSCREENFINGERPRINT*/
 
 struct fb_event {
 	struct fb_info *info;
