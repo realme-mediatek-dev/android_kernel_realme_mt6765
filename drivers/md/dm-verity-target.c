@@ -255,7 +255,13 @@ out:
 #ifdef CONFIG_DM_VERITY_AVB
 		dm_verity_avb_error_handler();
 #endif
+
+#ifdef VENDOR_EDIT
+// Bin.Xu@BSP.Kernel.Stability, 2020/4/15, add feature: feedback 2.0, monitor abnormal restart
+		panic("dm-verity device corrupted");
+#else
 		kernel_restart("dm-verity device corrupted");
+#endif /* VENDOR_EDIT */
 	}
 
 	return 1;

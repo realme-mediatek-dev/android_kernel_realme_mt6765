@@ -11,8 +11,11 @@
  *  membase is an 'ioremapped' cookie.
  */
 
+#ifndef OPLUS_FEATURE_CHG_BASIC
+/*wangdengwen@BSP.CHG.USB 2020/10/26 add for vooc OTA fail with uart open*/
 #if defined(CONFIG_SERIAL_8250_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
 #define SUPPORT_SYSRQ
+#endif
 #endif
 
 #include <linux/module.h>
@@ -726,8 +729,8 @@ static void serial8250_set_sleep(struct uart_8250_port *p, int sleep)
 	if (p->capabilities & UART_CAP_SLEEP) {
 		if (p->capabilities & UART_CAP_EFR) {
 			lcr = serial_in(p, UART_LCR);
-			efr = serial_in(p, UART_EFR);
 			serial_out(p, UART_LCR, UART_LCR_CONF_MODE_B);
+			efr = serial_in(p, UART_EFR);
 			serial_out(p, UART_EFR, UART_EFR_ECB);
 			serial_out(p, UART_LCR, 0);
 		}
