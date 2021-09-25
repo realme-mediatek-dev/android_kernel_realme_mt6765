@@ -2,7 +2,7 @@
 #
 # Makefile for the kernel block layer
 #
-
+ccflags-y += -I$(srctree)/drivers/mmc/core
 obj-$(CONFIG_BLOCK) := bio.o elevator.o blk-core.o blk-tag.o blk-sysfs.o \
 			blk-flush.o blk-settings.o blk-ioc.o blk-map.o \
 			blk-exec.o blk-merge.o blk-softirq.o blk-timeout.o \
@@ -39,4 +39,8 @@ obj-$(CONFIG_BLK_DEBUG_FS_ZONED)+= blk-mq-debugfs-zoned.o
 obj-$(CONFIG_BLK_SED_OPAL)	+= sed-opal.o
 obj-$(CONFIG_BLK_INLINE_ENCRYPTION)	+= keyslot-manager.o bio-crypt-ctx.o \
 					   blk-crypto.o
-obj-$(CONFIG_BLK_INLINE_ENCRYPTION_FALLBACK)	+= blk-crypto-fallback.o
+obj-$(CONFIG_BLK_INLINE_ENCRYPTION_FALLBACK)   += blk-crypto-fallback.o
+
+#ifdef OPLUS_FEATURE_UIFIRST
+obj-$(CONFIG_OPLUS_FEATURE_UXIO_FIRST)	+= uxio_first/
+#endif /*OPLUS_FEATURE_UIFIRST*/

@@ -36,6 +36,7 @@
 #include "blk-stat.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
+#include "mtk_mmc_block.h"
 
 static bool blk_mq_poll(struct request_queue *q, blk_qc_t cookie);
 static void blk_mq_poll_stats_start(struct request_queue *q);
@@ -505,8 +506,11 @@ void blk_mq_free_request(struct request *rq)
 
 	if (unlikely(laptop_mode && !blk_rq_is_passthrough(rq)))
 		laptop_io_completion(q->backing_dev_info);
-
+#if defined(OPLUS_FEATURE_UIFIRST) && defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	rq_qos_done(q, rq,(bool)((rq->cmd_flags & REQ_FG)||(rq->cmd_flags & REQ_UX)));
+#else
 	rq_qos_done(q, rq);
+#endif
 
 	if (blk_rq_rl(rq))
 		blk_put_rl(blk_rq_rl(rq));
@@ -529,7 +533,11 @@ inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
 	blk_account_io_done(rq, now);
 
 	if (rq->end_io) {
+#if defined(OPLUS_FEATURE_UIFIRST) && defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+		rq_qos_done(rq->q, rq,(bool)((rq->cmd_flags & REQ_FG)||(rq->cmd_flags & REQ_UX)));
+#else
 		rq_qos_done(rq->q, rq);
+#endif
 		rq->end_io(rq, error);
 	} else {
 		if (unlikely(blk_bidi_rq(rq)))
@@ -1463,6 +1471,7 @@ EXPORT_SYMBOL(blk_mq_queue_stopped);
  */
 void blk_mq_stop_hw_queue(struct blk_mq_hw_ctx *hctx)
 {
+	mt_bio_queue_free(current);
 	cancel_delayed_work(&hctx->run_work);
 
 	set_bit(BLK_MQ_S_STOPPED, &hctx->state);
@@ -2185,7 +2194,6 @@ static int blk_mq_init_hctx(struct request_queue *q,
 	node = hctx->numa_node;
 	if (node == NUMA_NO_NODE)
 		node = hctx->numa_node = set->numa_node;
-
 	INIT_DELAYED_WORK(&hctx->run_work, blk_mq_run_work_fn);
 	spin_lock_init(&hctx->lock);
 	INIT_LIST_HEAD(&hctx->dispatch);
