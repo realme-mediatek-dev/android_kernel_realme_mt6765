@@ -129,6 +129,10 @@ boot		:= arch/arm64/boot
 KBUILD_IMAGE	:= $(boot)/Image.gz
 KBUILD_DTBS	:= dtbs
 
+ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
+export DTC_FLAGS := -@
+endif
+
 all:	Image.gz $(KBUILD_DTBS)
 MTK_PLATFORM := $(CONFIG_MTK_PLATFORM:"%"=%)
 MTK_PROJECT := $(CONFIG_ARCH_MTK_PROJECT:"%"=%)
