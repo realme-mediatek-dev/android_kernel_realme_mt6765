@@ -19,7 +19,7 @@ config OPPO_COMMON_SOFT
 	Maybe this value is from CDT or dynamic identify by hardware
 	id.
 
-config OPPO_DEVICE_IFNO
+config OPPO_DEVICE_INFO
   tristate "config oppo devinfo"
   select OPPO_ARCH_FILE
   help
