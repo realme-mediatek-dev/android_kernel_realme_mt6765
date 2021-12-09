@@ -588,13 +588,6 @@ ifeq ($(MAKECMDGOALS),)
 endif
 
 export KBUILD_MODULES KBUILD_BUILTIN
-#ifdef VENDOR_EDIT
-#wangyun@PSW.BSP.CHG.Basic, 2020/05/27, lzj Add for 806 high/low temp aging test
-ifeq ($(OPPO_HIGH_TEMP_VERSION),true)
-KBUILD_CFLAGS += -DCONFIG_HIGH_TEMP_VERSION
-KBUILD_CPPFLAGS += -DCONFIG_HIGH_TEMP_VERSION
-endif
-#endif /* VENDOR_EDIT */
 
 #ifdef  VENDOR_EDIT
 #LiPing-m@PSW.MM.Display.LCD.Machine, 2017/11/03, Add for VENDOR_EDIT macro in kernel
