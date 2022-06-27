@@ -805,3 +805,5 @@ CONFIG_NR_CPUS=8
 
 
 CONFIG_SECURITY_SELINUX_DEVELOP=y
+
+CONFIG_EXTREME_LOW_RAM=y // This disables some debugging in mtk drivers 
