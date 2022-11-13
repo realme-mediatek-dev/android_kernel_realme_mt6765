@@ -49,12 +49,10 @@ else
 ccflags-y += -D CUSTOMER_FW_UPDATE=0
 endif
 
-ifneq ($(CFG_BT_PM_QOS_CONTROL),)
-    $(warning set PM_QOS_CONTROL=1)
-    ccflags-y += -D PM_QOS_CONTROL=1
-else
-    ccflags-y += -D PM_QOS_CONTROL=0
-endif
+# techyminati: Enable PM QOS by default
+$(warning set PM_QOS_CONTROL=1)
+ccflags-y += -D PM_QOS_CONTROL=1
+
 
 # ---------------------------------------------------
 # Include Path
