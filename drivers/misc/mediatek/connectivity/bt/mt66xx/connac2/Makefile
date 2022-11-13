@@ -52,6 +52,7 @@ endif
 # techyminati: Enable PM QOS by default
 $(warning set PM_QOS_CONTROL=1)
 ccflags-y += -D PM_QOS_CONTROL=1
+ccflags-y += -Wno-unused-variable
 
 
 # ---------------------------------------------------
