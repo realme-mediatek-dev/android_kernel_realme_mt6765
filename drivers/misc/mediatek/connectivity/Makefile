@@ -54,7 +54,8 @@ ifneq ($(KERNELRELEASE),)
        # export MTK_ANDROID_EMI=y
         export WIFI_IP_SET=1
         export WIFI_ECO_VER=1
-
+        export CFG_FM_CHIP_ID=6765
+        export CFG_FM_CHIP=mt6631
         # Do build-in for xxx.c checking
         subdir-ccflags-y += -D MTK_WCN_REMOVE_KERNEL_MODULE
         subdir-ccflags-y += -D MTK_WCN_BUILT_IN_DRIVER
@@ -67,7 +68,7 @@ ifneq ($(KERNELRELEASE),)
 
 
 # Bluetooth
-obj-$(CONFIG_MTK_COMBO_BT) += bt/mt66xx/wmt/
+obj-$(CONFIG_MTK_COMBO_BT) += bt/mt66xx/legacy/
 
 # FMRadio
 obj-$(CONFIG_MTK_FMRADIO) += fmradio/
